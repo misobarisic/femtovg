@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+- Backported upstream's transformed bitmap-glyph shared-borrow fix
+  (`61d24855a2c3c73efaab6fe9108f642fc6569067`) and regression test.
+
 ## [0.27.0] - 2026-08-31
 
 - Added text decoration for `fill_text()` and `stroke_text()`: underline,
