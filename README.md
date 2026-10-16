@@ -17,6 +17,39 @@ Ported from https://github.com/memononen/nanovg
 
 Most of the implementation is the same as the original C code with some bug fixes, some features added and several parts have been made more Rust-y. Rendering is done via one OpenGl (ES) 3.0+ backend.
 
+## COLRv1 color fonts (fork)
+
+The optional `colrv1` feature adds CPU rasterization of OpenType COLRv1 paint
+graphs through Skrifa 0.44 and tiny-skia 0.12 into the existing color glyph
+atlas. It works with positioned glyph runs and the existing text layout API;
+other glyphs continue through the existing Swash/outline paths. The default
+CPAL palette and foreground color, variation coordinates, transforms, clips,
+gradients and isolated composites are supported. Output uses straight RGBA;
+foreground colors participate in the COLRv1 atlas cache key. Temporary glyph
+atlases retain upstream's shared-borrow fix and lifecycle unchanged.
+
+This branch stays on the Slint 1.18-compatible 0.27 release baseline
+`0eb55780894a9200e9a70ca3d16bd1c641281a44`, with upstream's shared-borrow fix
+`61d24855a2c3c73efaab6fe9108f642fc6569067` backported together with its regression
+test. Newer upstream changes replace `GaussianBlur { sigma }` with per-axis
+fields, which Slint 1.18 cannot use yet. The only additional feature is COLRv1.
+Graph work, recursion, temporary storage and glyph raster dimensions are capped.
+Gradient interpolation follows native Skia's sRGB behavior; see the independent
+reference fixtures in `tests/fixtures/colrv1/` for the CPAL specification distinction.
+
+Until tiny-skia releases the partial-sweep normalization fix, this repository
+patches it to `misobarisic/tiny-skia` revision
+`7cb203434cc55baa98333b5c480da158d08ce866`. Cargo ignores dependency-level patches,
+so applications enabling `colrv1` must add the same `[patch.crates-io]` entries
+for both `tiny-skia` and `tiny-skia-path` to keep shared geometry types identical.
+
+```sh
+cargo test --lib --no-default-features --features colrv1
+cargo test --lib --features colrv1
+# Optional exhaustive application-font corpus, without bundling it here:
+COLRV1_TEST_FONT=/path/to/NotoColorEmoji.ttf cargo test --lib --features colrv1 external_color_font_rasterizes -- --ignored
+```
+
 ## Screenshots
 ### Demo
 ![demo](assets/demo.png)

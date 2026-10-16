@@ -22,7 +22,9 @@ extern crate serde;
 
 #[cfg(feature = "textlayout")]
 use std::ops::Range;
-use std::{cell::RefCell, path::Path as FilePath, rc::Rc};
+#[cfg(feature = "textlayout")]
+use std::path::Path as FilePath;
+use std::{cell::RefCell, rc::Rc};
 
 use imgref::ImgVec;
 use rgb::RGBA8;
@@ -2236,9 +2238,10 @@ where
         let glyphs_it = glyphs.into_iter();
         let non_color_glyphs = glyphs_it
             .filter(|glyph| {
-                if font
-                    .glyph(&font_face, glyph.glyph_id, normalized_coords)
-                    .is_some_and(|glyph| glyph.path.is_none())
+                if font.is_colrv1(glyph.glyph_id)
+                    || font
+                        .glyph(&font_face, glyph.glyph_id, normalized_coords)
+                        .is_some_and(|glyph| glyph.path.is_none())
                 {
                     color_glyphs.push(glyph.clone());
 
@@ -2282,6 +2285,10 @@ where
                 stroke.line_width,
                 render_mode,
                 normalized_coords,
+                match paint.flavor {
+                    PaintFlavor::Color(c) => c,
+                    _ => Color::black(),
+                },
             )?
         };
 
@@ -2309,6 +2316,10 @@ where
                         stroke.line_width,
                         render_mode,
                         normalized_coords,
+                        match paint.flavor {
+                            PaintFlavor::Color(c) => c,
+                            _ => Color::black(),
+                        },
                     )?
                 } else {
                     atlas.render_atlas(
@@ -2321,6 +2332,10 @@ where
                         stroke.line_width,
                         render_mode,
                         normalized_coords,
+                        match paint.flavor {
+                            PaintFlavor::Color(c) => c,
+                            _ => Color::black(),
+                        },
                     )?
                 }
             };
@@ -2398,6 +2413,7 @@ where
         self.verts.extend_from_slice(verts);
     }
 
+    #[cfg(feature = "textlayout")]
     fn font_scale(&self) -> f32 {
         let avg_scale = self.state().transform.average_scale();
 

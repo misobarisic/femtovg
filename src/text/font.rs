@@ -370,6 +370,23 @@ pub struct Font {
 }
 
 impl Font {
+    #[cfg(feature = "colrv1")]
+    pub(super) fn colr_data(&self) -> (&[u8], u32) {
+        (self.data.as_ref().as_ref(), self.face_index)
+    }
+
+    pub(crate) fn is_colrv1(&self, _glyph: u16) -> bool {
+        #[cfg(feature = "colrv1")]
+        {
+            let (data, index) = self.colr_data();
+            super::colr::has_glyph(data, index, _glyph)
+        }
+        #[cfg(not(feature = "colrv1"))]
+        {
+            false
+        }
+    }
+
     #[cfg(feature = "textlayout")]
     pub fn new_with_data<T: AsRef<[u8]> + 'static>(
         data: T,

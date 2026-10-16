@@ -11,6 +11,9 @@ use crate::{
     RenderTarget, Renderer,
 };
 
+#[cfg(feature = "colrv1")]
+mod colr;
+
 mod atlas;
 pub use atlas::Atlas;
 
@@ -95,9 +98,12 @@ pub struct RenderedGlyphId {
     render_mode: RenderMode,
     subpixel_location: u8,
     variation_hash: u64,
+    #[cfg(feature = "colrv1")]
+    foreground: [u32; 4],
 }
 
 impl RenderedGlyphId {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         glyph_index: u16,
         font_id: FontId,
@@ -106,6 +112,7 @@ impl RenderedGlyphId {
         mode: RenderMode,
         subpixel_location: u8,
         normalized_coords: &[i16],
+        _foreground: Color,
     ) -> Self {
         use std::hash::Hasher;
         let mut hasher = fnv::FnvHasher::default();
@@ -118,6 +125,13 @@ impl RenderedGlyphId {
             render_mode: mode,
             subpixel_location,
             variation_hash: hasher.finish(),
+            #[cfg(feature = "colrv1")]
+            foreground: [
+                _foreground.r.to_bits(),
+                _foreground.g.to_bits(),
+                _foreground.b.to_bits(),
+                _foreground.a.to_bits(),
+            ],
         }
     }
 }
@@ -472,6 +486,7 @@ impl GlyphAtlas {
         line_width: f32,
         mode: RenderMode,
         normalized_coords: &[i16],
+        foreground: Color,
     ) -> Result<GlyphDrawCommands, ErrorKind> {
         let mut alpha_cmd_map = FnvHashMap::default();
         let mut color_cmd_map = FnvHashMap::default();
@@ -495,6 +510,11 @@ impl GlyphAtlas {
                 mode,
                 subpixel_location as u8,
                 normalized_coords,
+                if font.is_colrv1(glyph.glyph_id) {
+                    foreground
+                } else {
+                    Color::black()
+                },
             );
 
             let mut rendered_glyphs = self.rendered_glyphs.borrow_mut();
@@ -512,6 +532,7 @@ impl GlyphAtlas {
                         glyph.glyph_id,
                         subpixel_location / 10.0,
                         normalized_coords,
+                        foreground,
                     )?;
                     glyph_cache_entry.insert_entry(result)
                 }
@@ -578,7 +599,24 @@ impl GlyphAtlas {
         glyph_id: u16,
         _subpixel_x: f32,
         normalized_coords: &[i16],
+        _foreground: Color,
     ) -> Result<Option<RenderedGlyph>, ErrorKind> {
+        #[cfg(feature = "colrv1")]
+        {
+            let (data, index) = font.colr_data();
+            if let Some(bitmap) = colr::rasterize(
+                data,
+                index,
+                glyph_id,
+                font_size,
+                _subpixel_x,
+                normalized_coords,
+                _foreground,
+            ) {
+                return self.upload_colr(canvas, bitmap).map(Some);
+            }
+        }
+
         #[cfg(feature = "swash")]
         if mode == RenderMode::Fill {
             if let Some(result) =
@@ -831,6 +869,50 @@ impl GlyphAtlas {
             atlas_y: dst_y as u32 + GLYPH_MARGIN,
             color_glyph: is_color,
         }))
+    }
+
+    #[cfg(feature = "colrv1")]
+    fn upload_colr<T: Renderer>(
+        &self,
+        canvas: &mut Canvas<T>,
+        bitmap: colr::Bitmap,
+    ) -> Result<RenderedGlyph, ErrorKind> {
+        let width = bitmap.width + 2 * GLYPH_PADDING;
+        let height = bitmap.height + 2 * GLYPH_PADDING;
+        let (index, image_id, (x, y)) = self.find_texture_or_alloc(
+            canvas,
+            (width + 2 * GLYPH_MARGIN) as usize,
+            (height + 2 * GLYPH_MARGIN) as usize,
+        )?;
+        let mut pixels = vec![rgb::RGBA8::new(0, 0, 0, 0); width as usize * height as usize];
+        for row in 0..bitmap.height as usize {
+            for col in 0..bitmap.width as usize {
+                let src = (row * bitmap.width as usize + col) * 4;
+                let dst = (row + GLYPH_PADDING as usize) * width as usize + col + GLYPH_PADDING as usize;
+                pixels[dst] = rgb::RGBA8::new(
+                    bitmap.pixels[src],
+                    bitmap.pixels[src + 1],
+                    bitmap.pixels[src + 2],
+                    bitmap.pixels[src + 3],
+                );
+            }
+        }
+        canvas.update_image(
+            image_id,
+            crate::image::ImageSource::from(imgref::Img::new(&pixels[..], width as usize, height as usize)),
+            x + GLYPH_MARGIN as usize,
+            y + GLYPH_MARGIN as usize,
+        )?;
+        Ok(RenderedGlyph {
+            texture_index: index,
+            width,
+            height,
+            bearing_x: bitmap.left,
+            bearing_y: bitmap.top,
+            atlas_x: x as u32 + GLYPH_MARGIN,
+            atlas_y: y as u32 + GLYPH_MARGIN,
+            color_glyph: true,
+        })
     }
 
     // Returns (texture index, image id, glyph padding box)
